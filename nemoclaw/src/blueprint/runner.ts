@@ -474,6 +474,96 @@ export interface RunPlan {
   dry_run: boolean;
 }
 
+interface SafeRunPlan {
+  run_id: string;
+  profile: string;
+  sandbox: {
+    image?: string;
+    name?: string;
+    forward_ports?: number[];
+  };
+  sandbox_name?: string;
+  inference: {
+    provider_type?: string;
+    provider_name?: string;
+    endpoint?: string;
+    model?: string;
+  };
+  router?: {
+    enabled?: boolean;
+    port?: number;
+    pool_config_path?: string;
+  };
+  policy_additions?: PolicyAdditions;
+  dry_run?: boolean;
+  timestamp?: string;
+}
+
+function safeRunPlan(plan: RunPlan): SafeRunPlan {
+  return {
+    run_id: plan.run_id,
+    profile: plan.profile,
+    sandbox: {
+      image: plan.sandbox.image,
+      name: plan.sandbox.name,
+      forward_ports: plan.sandbox.forward_ports,
+    },
+    inference: {
+      provider_type: plan.inference.provider_type,
+      provider_name: plan.inference.provider_name,
+      endpoint: plan.inference.endpoint,
+      model: plan.inference.model,
+    },
+    router: {
+      enabled: plan.router.enabled,
+      port: plan.router.port,
+      pool_config_path: plan.router.pool_config_path,
+    },
+    policy_additions: plan.policy_additions,
+    dry_run: plan.dry_run,
+  };
+}
+
+function safePersistedRunPlan(plan: UnknownRecord): SafeRunPlan {
+  const sandbox = isObjectLike(plan.sandbox) ? plan.sandbox : {};
+  const inference = isObjectLike(plan.inference) ? plan.inference : {};
+  const router = isObjectLike(plan.router) ? plan.router : undefined;
+
+  return {
+    run_id: typeof plan.run_id === "string" ? plan.run_id : "unknown",
+    profile: typeof plan.profile === "string" ? plan.profile : "unknown",
+    sandbox: {
+      image: typeof sandbox.image === "string" ? sandbox.image : undefined,
+      name: typeof sandbox.name === "string" ? sandbox.name : undefined,
+      forward_ports: Array.isArray(sandbox.forward_ports)
+        ? sandbox.forward_ports.filter((port): port is number => typeof port === "number")
+        : undefined,
+    },
+    sandbox_name: typeof plan.sandbox_name === "string" ? plan.sandbox_name : undefined,
+    inference: {
+      provider_type:
+        typeof inference.provider_type === "string" ? inference.provider_type : undefined,
+      provider_name:
+        typeof inference.provider_name === "string" ? inference.provider_name : undefined,
+      endpoint: typeof inference.endpoint === "string" ? inference.endpoint : undefined,
+      model: typeof inference.model === "string" ? inference.model : undefined,
+    },
+    router: router
+      ? {
+          enabled: typeof router.enabled === "boolean" ? router.enabled : undefined,
+          port: typeof router.port === "number" ? router.port : undefined,
+          pool_config_path:
+            typeof router.pool_config_path === "string" ? router.pool_config_path : undefined,
+        }
+      : undefined,
+    policy_additions: isObjectLike(plan.policy_additions)
+      ? (plan.policy_additions as PolicyAdditions)
+      : undefined,
+    dry_run: typeof plan.dry_run === "boolean" ? plan.dry_run : undefined,
+    timestamp: typeof plan.timestamp === "string" ? plan.timestamp : undefined,
+  };
+}
+
 export async function actionPlan(
   profile: string,
   blueprint: Blueprint,
@@ -523,7 +613,7 @@ export async function actionPlan(
   };
 
   progress(100, "Plan complete");
-  log(JSON.stringify(plan, null, 2));
+  log(JSON.stringify(safeRunPlan(plan), null, 2));
   return plan;
 }
 
@@ -725,7 +815,13 @@ export function actionStatus(rid?: string): void {
   }
 
   try {
-    log(readFileSync(join(runDir, "plan.json"), "utf-8"));
+    const planData = readFileSync(join(runDir, "plan.json"), "utf-8");
+    const parsedPlan: unknown = JSON.parse(planData);
+    const statusPlan = isObjectLike(parsedPlan) ? safePersistedRunPlan(parsedPlan) : null;
+    if (statusPlan === null) {
+      throw new Error("Invalid plan.json");
+    }
+    log(JSON.stringify(statusPlan, null, 2));
   } catch {
     const name = runDir.split("/").pop() ?? "unknown";
     log(JSON.stringify({ run_id: name, status: "unknown" }));

@@ -486,6 +486,19 @@ describe("runner", () => {
       expect(plan.dry_run).toBe(false);
     });
 
+    it("omits credential fields from the printed plan", async () => {
+      captureStdout();
+      mockExeca.mockResolvedValue({ exitCode: 0 });
+
+      const plan = await actionPlan("default", minimalBlueprint());
+      const out = stdoutText();
+
+      expect(plan.inference.credential_env).toBe("MY_API_KEY");
+      expect(out).not.toContain("credential_env");
+      expect(out).not.toContain("MY_API_KEY");
+      expect(out).toContain('"model": "gpt-4"');
+    });
+
     it("passes dryRun through to the plan", async () => {
       captureStdout();
       mockExeca.mockResolvedValue({ exitCode: 0 });
@@ -1087,8 +1100,13 @@ describe("runner", () => {
       expect(stdoutText()).toContain("No runs found.");
     });
 
-    it("prints plan.json for most recent run", () => {
-      const plan = { run_id: "nc-run-2", profile: "default" };
+    it("prints an allowlisted plan for most recent run", () => {
+      const plan = {
+        run_id: "nc-run-2",
+        profile: "default",
+        sandbox_name: "test-sandbox",
+        inference: { model: "gpt-4", credential_env: "MY_API_KEY" },
+      };
       addDir(`${RUNS_DIR}/nc-run-1`);
       addFile(`${RUNS_DIR}/nc-run-1/plan.json`, JSON.stringify({ run_id: "nc-run-1" }));
       addDir(`${RUNS_DIR}/nc-run-2`);
@@ -1096,15 +1114,26 @@ describe("runner", () => {
 
       actionStatus();
       // Should pick the latest (nc-run-2 sorts after nc-run-1)
-      expect(stdoutText()).toContain('"nc-run-2"');
+      const out = stdoutText();
+      expect(out).toContain('"nc-run-2"');
+      expect(out).toContain('"sandbox_name": "test-sandbox"');
+      expect(out).toContain('"model": "gpt-4"');
+      expect(out).not.toContain("credential_env");
+      expect(out).not.toContain("MY_API_KEY");
     });
 
-    it("prints plan.json for a specific run ID", () => {
+    it("prints an allowlisted plan for a specific run ID", () => {
       addDir(`${RUNS_DIR}/nc-run-1`);
-      addFile(`${RUNS_DIR}/nc-run-1/plan.json`, JSON.stringify({ run_id: "nc-run-1" }));
+      addFile(
+        `${RUNS_DIR}/nc-run-1/plan.json`,
+        JSON.stringify({ run_id: "nc-run-1", profile: "default", extra_secret: "hidden" }),
+      );
 
       actionStatus("nc-run-1");
-      expect(stdoutText()).toContain('"nc-run-1"');
+      const out = stdoutText();
+      expect(out).toContain('"nc-run-1"');
+      expect(out).not.toContain("extra_secret");
+      expect(out).not.toContain("hidden");
     });
 
     it("prints unknown status when plan.json is missing", () => {
