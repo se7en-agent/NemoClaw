@@ -95,6 +95,12 @@ export function ensureAgentBaseImage(
     label: `${agent.displayName} sandbox base image`,
     requireOpenshellSandboxAbi: process.platform === "linux",
     rootDir: ROOT,
+    baseImageInputPaths: [
+      path.relative(ROOT, baseDockerfile),
+      "nemoclaw-blueprint/blueprint.yaml",
+      "scripts/nemoclaw-ssh-proxy.sh",
+      "scripts/nemoclaw-ssh-config",
+    ],
   });
   if (resolved && !forceBaseImageRebuild) {
     console.log(`  Using ${agent.displayName} base image: ${resolved.ref}`);

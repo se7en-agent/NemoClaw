@@ -132,6 +132,12 @@ describe("agent base image provisioning", () => {
             label: "Hermes Agent sandbox base image",
             requireOpenshellSandboxAbi: process.platform === "linux",
             rootDir: root,
+            baseImageInputPaths: [
+              expect.stringMatching(/agents\/hermes\/Dockerfile\.base$/),
+              "nemoclaw-blueprint/blueprint.yaml",
+              "scripts/nemoclaw-ssh-proxy.sh",
+              "scripts/nemoclaw-ssh-config",
+            ],
           }),
         );
         expect(dockerImageInspectMock).not.toHaveBeenCalled();

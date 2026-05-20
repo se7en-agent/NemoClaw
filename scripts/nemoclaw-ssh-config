@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Route OpenSSH clients through the OpenShell HTTP CONNECT proxy by default.
+# OpenSSH does not honor HTTP_PROXY/HTTPS_PROXY itself, so NemoClaw installs a
+# ProxyCommand helper for non-local SSH targets. OpenShell network policy still
+# decides whether each destination is allowed.
+
+Host localhost 127.* ::1 ip6-localhost *.localhost
+  ProxyCommand none
+
+Host *
+  ProxyCommand /usr/local/bin/nemoclaw-ssh-proxy %h %p

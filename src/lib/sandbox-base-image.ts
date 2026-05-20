@@ -27,6 +27,7 @@ type ResolveBaseImageOptions = {
   minGlibcVersion?: string;
   rootDir?: string;
   env?: NodeJS.ProcessEnv;
+  baseImageInputPaths?: string[];
 };
 
 export type SandboxBaseImageResolution = {
@@ -36,7 +37,12 @@ export type SandboxBaseImageResolution = {
   glibcVersion: string | null;
 };
 
-const BASE_IMAGE_INPUT_PATHS = ["Dockerfile.base", "nemoclaw-blueprint/blueprint.yaml"];
+const BASE_IMAGE_INPUT_PATHS = [
+  "Dockerfile.base",
+  "nemoclaw-blueprint/blueprint.yaml",
+  "scripts/nemoclaw-ssh-proxy.sh",
+  "scripts/nemoclaw-ssh-config",
+];
 
 /**
  * Combine stderr + stdout from a captured `dockerBuild` failure and pass them
@@ -165,8 +171,9 @@ function gitHasPathDiff(
   rootDir: string,
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
+  inputPaths: string[] = BASE_IMAGE_INPUT_PATHS,
 ): boolean | null {
-  const status = gitStatus(rootDir, [...args, "--", ...BASE_IMAGE_INPUT_PATHS], env);
+  const status = gitStatus(rootDir, [...args, "--", ...inputPaths], env);
   if (status === 0) return false;
   if (status === 1) return true;
   return null;
@@ -175,11 +182,12 @@ function gitHasPathDiff(
 export function baseImageInputsChangedSinceMain(
   rootDir = ROOT,
   env: NodeJS.ProcessEnv = process.env,
+  inputPaths: string[] = BASE_IMAGE_INPUT_PATHS,
 ): boolean {
-  const worktreeDiff = gitHasPathDiff(rootDir, ["diff", "--quiet"], env);
+  const worktreeDiff = gitHasPathDiff(rootDir, ["diff", "--quiet"], env, inputPaths);
   if (worktreeDiff === true) return true;
 
-  const stagedDiff = gitHasPathDiff(rootDir, ["diff", "--cached", "--quiet"], env);
+  const stagedDiff = gitHasPathDiff(rootDir, ["diff", "--cached", "--quiet"], env, inputPaths);
   if (stagedDiff === true) return true;
 
   const baseBranch = String(env.GITHUB_BASE_REF || "main").trim() || "main";
@@ -197,7 +205,7 @@ export function baseImageInputsChangedSinceMain(
 
   for (const ref of Array.from(new Set(candidates))) {
     if (!gitRefExists(rootDir, ref, env)) continue;
-    const diff = gitHasPathDiff(rootDir, ["diff", "--quiet", ref, "HEAD"], env);
+    const diff = gitHasPathDiff(rootDir, ["diff", "--quiet", ref, "HEAD"], env, inputPaths);
     if (diff != null) return diff;
   }
 
@@ -354,7 +362,7 @@ export function resolveSandboxBaseImage(
       if (resolved) return resolved;
     }
 
-    if (baseImageInputsChangedSinceMain(options.rootDir || ROOT, env)) {
+    if (baseImageInputsChangedSinceMain(options.rootDir || ROOT, env, options.baseImageInputPaths)) {
       const local = resolveLocalCandidate(options);
       if (local) return local;
       // The base Dockerfile changed, so fail closed instead of silently using stale :latest.

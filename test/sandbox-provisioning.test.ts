@@ -188,7 +188,7 @@ describe("sandbox provisioning: unified .openclaw layout (#2227)", () => {
 });
 
 describe("sandbox provisioning: base runtime tools", () => {
-  it("base apt layer requests procps, e2fsprogs, and the SFTP server", () => {
+  it("base apt layer requests procps, e2fsprogs, and OpenSSH tools", () => {
     const dockerfile = fs.readFileSync(DOCKERFILE_BASE, "utf-8");
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nemoclaw-base-apt-"));
     const lists = path.join(tmp, "apt-lists");
@@ -207,6 +207,7 @@ describe("sandbox provisioning: base runtime tools", () => {
       expect(calls).toContain("apt-get update");
       expect(calls).toContain("procps=2:4.0.4-9");
       expect(calls).toContain("e2fsprogs=1.47.2-3+b11");
+      expect(calls).toContain("openssh-client=1:10.0p1-7+deb13u4");
       expect(calls).toContain("openssh-sftp-server=1:10.0p1-7+deb13u4");
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

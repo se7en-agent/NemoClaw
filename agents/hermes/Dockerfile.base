@@ -42,12 +42,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libcap2-bin=1:2.75-10+deb13u1+b1 \
         procps=2:4.0.4-9 \
         e2fsprogs=1.47.2-3+b11 \
+        openssh-client=1:10.0p1-7+deb13u4 \
         openssh-sftp-server=1:10.0p1-7+deb13u4 \
         socat=1.8.0.3-1 \
         "dos2unix=7.5.2-1*" \
         jq=1.7.1-6+deb13u2 \
         vim-tiny=2:9.1.1230-2 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/nemoclaw-ssh-proxy.sh /usr/local/bin/nemoclaw-ssh-proxy
+COPY scripts/nemoclaw-ssh-config /etc/ssh/ssh_config.d/90-nemoclaw-proxy.conf
+RUN chmod 755 /usr/local/bin/nemoclaw-ssh-proxy \
+    && chmod 644 /etc/ssh/ssh_config.d/90-nemoclaw-proxy.conf
 
 # gosu for privilege separation (gateway vs sandbox user).
 # Identical to OpenClaw base — pinned to 1.19 with checksum.

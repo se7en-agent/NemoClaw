@@ -175,6 +175,43 @@ describe("sandbox base image helpers", () => {
     expect(baseImageInputsChangedSinceMain(root, gitEnv)).toBe(true);
   });
 
+  it("detects committed SSH proxy helper changes relative to origin/main", () => {
+    const root = createGitFixture();
+    git(root, ["switch", "-c", "feature"]);
+    writeFixture(root, "scripts/nemoclaw-ssh-proxy.sh", "#!/usr/bin/env bash\necho changed\n");
+    git(root, ["add", "scripts/nemoclaw-ssh-proxy.sh"]);
+    git(root, ["commit", "-m", "change base helper"]);
+
+    expect(baseImageInputsChangedSinceMain(root, gitEnv)).toBe(true);
+  });
+
+  it("detects committed SSH client config changes relative to origin/main", () => {
+    const root = createGitFixture();
+    git(root, ["switch", "-c", "feature"]);
+    writeFixture(root, "scripts/nemoclaw-ssh-config", "Host *\n  ProxyCommand changed %h %p\n");
+    git(root, ["add", "scripts/nemoclaw-ssh-config"]);
+    git(root, ["commit", "-m", "change ssh config"]);
+
+    expect(baseImageInputsChangedSinceMain(root, gitEnv)).toBe(true);
+  });
+
+  it("detects committed custom agent base Dockerfile changes when custom inputs are provided", () => {
+    const root = createGitFixture();
+    git(root, ["switch", "-c", "feature"]);
+    writeFixture(root, "agents/hermes/Dockerfile.base", "FROM node:22\nRUN echo hermes changed\n");
+    git(root, ["add", "agents/hermes/Dockerfile.base"]);
+    git(root, ["commit", "-m", "change hermes base"]);
+
+    expect(
+      baseImageInputsChangedSinceMain(root, gitEnv, [
+        "agents/hermes/Dockerfile.base",
+        "nemoclaw-blueprint/blueprint.yaml",
+        "scripts/nemoclaw-ssh-proxy.sh",
+        "scripts/nemoclaw-ssh-config",
+      ]),
+    ).toBe(true);
+  });
+
   it("ignores non-base-image source changes relative to origin/main", () => {
     const root = createGitFixture();
     git(root, ["switch", "-c", "feature"]);
