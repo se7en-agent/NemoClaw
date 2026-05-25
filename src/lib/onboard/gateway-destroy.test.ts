@@ -15,6 +15,7 @@ function deps(overrides: Partial<DestroyGatewayDeps> = {}): DestroyGatewayDeps {
     removeDockerDriverGatewayRegistration: vi.fn(() => true),
     runOpenshell: vi.fn(() => ({ status: 0 })),
     stopDockerDriverGatewayProcess: vi.fn(),
+    stopHostOpenShellGatewayProcesses: vi.fn(),
     ...overrides,
   };
 }
@@ -43,6 +44,7 @@ describe("destroyGatewayWithVolumeCleanup", () => {
     expect(destroyGatewayWithVolumeCleanup(d)).toBe(true);
 
     expect(d.stopDockerDriverGatewayProcess).toHaveBeenCalledOnce();
+    expect(d.stopHostOpenShellGatewayProcesses).toHaveBeenCalledOnce();
     expect(d.removeDockerDriverGatewayRegistration).toHaveBeenCalledOnce();
     expect(d.runOpenshell).not.toHaveBeenCalled();
     expect(d.clearRegistry).toHaveBeenCalledOnce();

@@ -20,6 +20,7 @@ export type DestroyGatewayDeps = {
   removeDockerDriverGatewayRegistration: () => boolean;
   runOpenshell: RunOpenshell;
   stopDockerDriverGatewayProcess: () => void;
+  stopHostOpenShellGatewayProcesses?: () => void;
 };
 
 export function destroyGatewayWithVolumeCleanup({
@@ -31,10 +32,12 @@ export function destroyGatewayWithVolumeCleanup({
   removeDockerDriverGatewayRegistration,
   runOpenshell,
   stopDockerDriverGatewayProcess,
+  stopHostOpenShellGatewayProcesses,
 }: DestroyGatewayDeps): boolean {
   const dockerDriver = isDockerDriverGatewayEnabled();
   if (dockerDriver) {
     stopDockerDriverGatewayProcess();
+    stopHostOpenShellGatewayProcesses?.();
   }
 
   const lifecycleCommands = hasLifecycleCommands();

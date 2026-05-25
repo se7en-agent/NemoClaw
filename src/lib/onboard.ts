@@ -419,6 +419,8 @@ const { verifyGatewayContainerRunning } =
   require("./onboard/gateway-container-running") as typeof import("./onboard/gateway-container-running");
 const { destroyGatewayWithVolumeCleanup } =
   require("./onboard/gateway-destroy") as typeof import("./onboard/gateway-destroy");
+const { stopHostOpenShellGatewayProcesses } =
+  require("./onboard/host-gateway-process-cleanup") as typeof import("./onboard/host-gateway-process-cleanup");
 const {
   gatewayCliSupportsLifecycleCommands,
 } = require("./onboard/gateway-lifecycle") as typeof import("./onboard/gateway-lifecycle");
@@ -1209,6 +1211,7 @@ function destroyGateway(
     removeDockerDriverGatewayRegistration,
     runOpenshell,
     stopDockerDriverGatewayProcess,
+    stopHostOpenShellGatewayProcesses,
   });
 }
 

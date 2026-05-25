@@ -20,6 +20,7 @@ import {
   shouldCleanupGatewayAfterDestroy,
   shouldStopHostServicesAfterDestroy,
 } from "../../domain/sandbox/destroy";
+import { stopHostOpenShellGatewayProcesses as defaultStopHostOpenShellGatewayProcesses } from "../../onboard/host-gateway-process-cleanup";
 import { stopStaleDashboardListeners } from "../../onboard/stale-gateway-cleanup";
 import { parseLiveSandboxNames } from "../../runtime-recovery";
 import { killTimer as defaultKillShieldsTimer } from "../../shields/timer-control";
@@ -51,6 +52,15 @@ type RunOpenshell = (
   args: string[],
   opts?: Record<string, unknown>,
 ) => { status: number | null };
+
+export type CleanupGatewayAfterLastSandboxDeps = {
+  dockerRemoveVolumesByPrefix?: (prefix: string, opts?: { ignoreError?: boolean }) => void;
+  platform?: NodeJS.Platform;
+  runOpenshell?: RunOpenshell;
+  stopDockerDriverGatewayProcess?: () => void;
+  stopHostOpenShellGatewayProcesses?: () => void;
+  stopStaleDashboardListeners?: () => void;
+};
 
 export type CleanupSandboxServicesDeps = {
   getSandbox?: typeof registry.getSandbox;
@@ -132,19 +142,33 @@ function stopDockerDriverGatewayProcess(): void {
   fs.rmSync(pidFile, { force: true });
 }
 
-function cleanupGatewayAfterLastSandbox(): void {
-  const { runOpenshell } = require("../../adapters/openshell/runtime") as {
-    runOpenshell: (
-      args: string[],
-      opts?: Record<string, unknown>,
-    ) => { status: number | null };
-  };
-  const { dockerRemoveVolumesByPrefix } = require("../../adapters/docker") as {
-    dockerRemoveVolumesByPrefix: (
-      prefix: string,
-      opts?: { ignoreError?: boolean },
-    ) => void;
-  };
+export function cleanupGatewayAfterLastSandbox(deps: CleanupGatewayAfterLastSandboxDeps = {}): void {
+  const runOpenshell =
+    deps.runOpenshell ??
+    ((args: string[], opts?: Record<string, unknown>) => {
+      const runtime = require("../../adapters/openshell/runtime") as {
+        runOpenshell: RunOpenshell;
+      };
+      return runtime.runOpenshell(args, opts);
+    });
+  const dockerRemoveVolumesByPrefix =
+    deps.dockerRemoveVolumesByPrefix ??
+    ((prefix: string, opts?: { ignoreError?: boolean }) => {
+      const docker = require("../../adapters/docker") as {
+        dockerRemoveVolumesByPrefix: (
+          prefix: string,
+          opts?: { ignoreError?: boolean },
+        ) => void;
+      };
+      docker.dockerRemoveVolumesByPrefix(prefix, opts);
+    });
+  const sweepStaleDashboardListeners =
+    deps.stopStaleDashboardListeners ?? stopStaleDashboardListeners;
+  const stopDockerGatewayProcess =
+    deps.stopDockerDriverGatewayProcess ?? stopDockerDriverGatewayProcess;
+  const stopHostGatewayProcesses =
+    deps.stopHostOpenShellGatewayProcesses ?? defaultStopHostOpenShellGatewayProcesses;
+  const platform = deps.platform ?? process.platform;
 
   runOpenshell(["forward", "stop", DASHBOARD_FORWARD_PORT], {
     ignoreError: true,
@@ -154,9 +178,10 @@ function cleanupGatewayAfterLastSandbox(): void {
   // stale host-side gateway-forward processes (#3397, #3398). The forward-stop
   // above releases ports the live openshell tracks; this catches orphans whose
   // openshell record was lost across upgrades or failed onboards.
-  stopStaleDashboardListeners();
-  if (process.platform === "linux") {
-    stopDockerDriverGatewayProcess();
+  sweepStaleDashboardListeners();
+  if (platform === "linux") {
+    stopDockerGatewayProcess();
+    stopHostGatewayProcesses();
     const removeResult = runOpenshell(
       ["gateway", "remove", NEMOCLAW_GATEWAY_NAME],
       {
