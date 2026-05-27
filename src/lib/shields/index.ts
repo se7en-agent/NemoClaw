@@ -62,27 +62,61 @@ const STATE_DIR = resolveNemoclawStateDir();
 
 const K3S_CONTAINER = "openshell-cluster-nemoclaw";
 
-function resolveDockerDriverSandboxContainer(
-  sandboxName: string,
-): string | null {
+function getOpenshellDriver(sandboxName: string): string | null | undefined {
   try {
-    if (registry.getSandbox?.(sandboxName)?.openshellDriver !== "docker") {
-      return null;
-    }
+    return registry.getSandbox?.(sandboxName)?.openshellDriver;
   } catch {
     return null;
   }
+}
+
+function selectDockerDriverSandboxContainer(
+  sandboxName: string,
+  openshellDriver: string | null | undefined,
+  containerNames: string,
+): string | null {
+  if (openshellDriver !== "docker") return null;
   const prefix = `openshell-${sandboxName}-`;
   const exact = `openshell-${sandboxName}`;
-  const output = dockerCapture(["ps", "--format", "{{.Names}}"], {
-    ignoreError: true,
-  });
   return (
-    output
+    containerNames
       .split("\n")
       .map((line: string) => line.trim())
       .find((name: string) => name === exact || name.startsWith(prefix)) || null
   );
+}
+
+function resolveDockerDriverSandboxContainer(
+  sandboxName: string,
+  openshellDriver: string | null | undefined,
+): string | null {
+  const output = dockerCapture(["ps", "--format", "{{.Names}}"], {
+    ignoreError: true,
+  });
+  return selectDockerDriverSandboxContainer(sandboxName, openshellDriver, output);
+}
+
+function buildVmDriverUnsupportedMessage(sandboxName: string): string {
+  return [
+    `OpenShell VM-driver sandbox '${sandboxName}' does not expose a host-side root exec backend required by shields.`,
+    "The VM driver has no openshell-cluster-nemoclaw Kubernetes container, so NemoClaw cannot safely chmod/chown the agent config from the host.",
+    "Use a Docker or Kubernetes backed sandbox for shields, or upgrade once OpenShell exposes privileged host-initiated VM config locking.",
+  ].join(" ");
+}
+
+function assertPrivilegedSandboxExecAvailable(sandboxName: string): void {
+  const openshellDriver = getOpenshellDriver(sandboxName);
+  if (openshellDriver === "vm") {
+    throw new Error(buildVmDriverUnsupportedMessage(sandboxName));
+  }
+  if (
+    openshellDriver === "docker" &&
+    !resolveDockerDriverSandboxContainer(sandboxName, openshellDriver)
+  ) {
+    throw new Error(
+      `Cannot find the OpenShell Docker-driver container for sandbox '${sandboxName}'.`,
+    );
+  }
 }
 
 function kubectlExecArgv(sandboxName: string, cmd: string[]): string[] {
@@ -105,10 +139,21 @@ function privilegedSandboxExecArgv(
   sandboxName: string,
   cmd: string[],
 ): string[] {
-  const dockerDriverContainer =
-    resolveDockerDriverSandboxContainer(sandboxName);
+  const openshellDriver = getOpenshellDriver(sandboxName);
+  if (openshellDriver === "vm") {
+    throw new Error(buildVmDriverUnsupportedMessage(sandboxName));
+  }
+  const dockerDriverContainer = resolveDockerDriverSandboxContainer(
+    sandboxName,
+    openshellDriver,
+  );
   if (dockerDriverContainer) {
     return ["exec", "--user", "root", dockerDriverContainer, ...cmd];
+  }
+  if (openshellDriver === "docker") {
+    throw new Error(
+      `Cannot find the OpenShell Docker-driver container for sandbox '${sandboxName}'.`,
+    );
   }
   return kubectlExecArgv(sandboxName, cmd);
 }
@@ -510,6 +555,7 @@ function unlockAgentConfig(
   sandboxName: string,
   target: AgentConfigTarget,
 ): void {
+  assertPrivilegedSandboxExecAvailable(sandboxName);
   const errors: string[] = [];
   const filesToUnlock = [target.configPath, ...(target.sensitiveFiles || [])];
   // Mutable-default mode for OpenClaw: group-writable + setgid on the
@@ -643,6 +689,7 @@ function lockAgentConfig(
   sandboxName: string,
   target: AgentConfigTarget,
 ): void {
+  assertPrivilegedSandboxExecAvailable(sandboxName);
   const errors: string[] = [];
   const filesToLock = [target.configPath, ...(target.sensitiveFiles || [])];
 
@@ -971,6 +1018,15 @@ function shieldsDown(sandboxName: string, opts: ShieldsDownOpts = {}): void {
     return failShieldsCommand(`Config is already unlocked for ${sandboxName}`, opts.throwOnError);
   }
 
+  try {
+    assertPrivilegedSandboxExecAvailable(sandboxName);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`  ERROR: ${message}`);
+    console.error("  Shields state and sandbox policy were not changed.");
+    return failShieldsCommand(message, opts.throwOnError);
+  }
+
   // Kill stale auto-restore markers only when this command will actually
   // transition into shields-down. A repeated shields-down must not cancel the
   // active timer and leave the sandbox unlocked indefinitely.
@@ -1176,6 +1232,15 @@ function shieldsUp(sandboxName: string, opts: { throwOnError?: boolean } = {}): 
     clearTimerMarker(sandboxName);
     console.log("  Lockdown is already active.");
     return;
+  }
+
+  try {
+    assertPrivilegedSandboxExecAvailable(sandboxName);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`  ERROR: ${message}`);
+    console.error("  Shields state and sandbox policy were not changed.");
+    return failShieldsCommand(message, opts.throwOnError);
   }
 
   // 1. Kill auto-restore timer if running

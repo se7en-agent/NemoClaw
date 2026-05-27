@@ -261,6 +261,66 @@ process.stdout.write(JSON.stringify(calls));
     expect(commands).toContainEqual(["chmod", "755", "/sandbox/.openclaw"]);
   });
 
+  it("rejects OpenShell VM-driver shields before probing the legacy cluster container", () => {
+    const probe = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        String.raw`
+const Module = require("node:module");
+const originalLoad = Module._load;
+const calls = [];
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === "../state/registry") {
+    return { getSandbox: () => ({ openshellDriver: "vm" }) };
+  }
+  if (request === "../adapters/docker/exec") {
+    return {
+      dockerExecFileSync(args) {
+        calls.push(["dockerExecFileSync", args]);
+        throw new Error("docker exec should not be called for VM-driver shields");
+      },
+    };
+  }
+  if (request === "../adapters/docker/run") {
+    return {
+      dockerCapture(args) {
+        calls.push(["dockerCapture", args]);
+        throw new Error("docker ps should not be called for VM-driver shields");
+      },
+    };
+  }
+  return originalLoad.call(this, request, parent, isMain);
+};
+const { lockAgentConfig } = require("./dist/lib/shields/index.js");
+try {
+  lockAgentConfig("alpha", {
+    agentName: "openclaw",
+    configPath: "/sandbox/.openclaw/openclaw.json",
+    configDir: "/sandbox/.openclaw",
+    sensitiveFiles: ["/sandbox/.openclaw/.config-hash"],
+  });
+  process.stdout.write(JSON.stringify({ ok: false, calls }));
+} catch (error) {
+  process.stdout.write(JSON.stringify({ ok: true, message: String(error && error.message || error), calls }));
+}
+`,
+      ],
+      { encoding: "utf-8", timeout: 5000 },
+    );
+
+    expect(probe.status).toBe(0);
+    const result = JSON.parse(probe.stdout) as {
+      ok: boolean;
+      message: string;
+      calls: unknown[];
+    };
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain("OpenShell VM-driver sandbox 'alpha'");
+    expect(result.message).toContain("openshell-cluster-nemoclaw");
+    expect(result.calls).toEqual([]);
+  });
+
   it("does not relax a root-owned config tree while shields are up", () => {
     const tmpDir = mkdtempOnPosixFs("nemoclaw-2681-locked-");
     const configDir = path.join(tmpDir, ".openclaw");
